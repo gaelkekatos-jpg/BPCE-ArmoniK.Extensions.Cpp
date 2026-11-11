@@ -1,0 +1,185 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  unit:
+    name: Unit tests + coverage
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
+
+      - name: Dependencies
+        id: deps
+        uses: ./.github/actions/armonik-deps-ubuntu
+        with:
+          extra-packages: lcov
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Debug
+          -DARMONIK_API_DIR="${{ steps.deps.outputs.api-prefix }}"
+          -DBUILD_TESTS=ON
+          -DARMONIK_COVERAGE=ON
+
+      - name: Build
+        run: cmake --build build -j "$(nproc)"
+
+      # tools/coverage.sh runs `ctest -L unit` (failing if no unit-labelled test exists), then writes
+      # coverage-report/lcov.info and the HTML report; it still writes the report when tests fail
+      - name: Run unit tests with coverage
+        run: >
+          tools/coverage.sh build
+          --timeout 300
+          --output-junit "${{ github.workspace }}/unit-tests.xml"
+
+      - name: Upload coverage to Codecov
+        if: ${{ !cancelled() && hashFiles('coverage-report/lcov.info') != '' }}
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6.0.2
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage-report/lcov.info
+          disable_search: true
+          flags: unit
+          fail_ci_if_error: false
+
+      - name: Upload coverage report
+        if: ${{ !cancelled() && hashFiles('coverage-report/index.html') != '' }}
+        uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # v4.3.6
+        with:
+          name: coverage-report
+          path: coverage-report/
+
+      - name: Upload test results
+        if: ${{ !cancelled() && hashFiles('unit-tests.xml') != '' }}
+        uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # v4.3.6
+        with:
+          name: unit-tests
+          path: unit-tests.xml
+
+  # Same ArmoniK deployment as build.yml (k3s + terraform quick-deploy, cppdynamic partition).
+  # The E2E tests are built and run with ctest on the runner itself: the runner is the k3s host,
+  # so the control plane is reachable directly, and ctest needs the CMake build tree, which the
+  # client test image of build.yml does not ship.
+  e2e:
+    name: E2E tests
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      WORKER_IMG: armonik-sdk-cpp-dynamicworker
+      WORKER_TEST_IMG: armonik-sdk-worker-test
+      WORKER_DIST: Ubuntu
+    steps:
+      - name: Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
+
+      - name: Install ArmoniK Dependencies
+        uses: aneoconsulting/ArmoniK.Action.Deploy/dependencies@923fcbd791220589afb89b3f0f5b5935eab39c63 # main
+        with:
+          docker: true
+          terraform: true
+          k3s: true
+          aws: true
+
+      - name: Checkout Infra
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
+        with:
+          repository: aneoconsulting/ArmoniK
+          path: infra
+
+      # Docker Hub login is optional (avoids pull rate limits), forks and dispatches without the secret still run
+      - name: Login Docker
+        env:
+          DOCKER_HUB_LOGIN: ${{ secrets.DOCKER_HUB_LOGIN }}
+          DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
+        run: |
+          if [ -n "$DOCKER_HUB_LOGIN" ] && [ -n "$DOCKER_HUB_TOKEN" ]; then
+            echo "$DOCKER_HUB_TOKEN" | docker login -u "$DOCKER_HUB_LOGIN" --password-stdin
+          else
+            echo "Docker Hub credentials not set, pulling anonymously"
+          fi
+
+      - name: Build dynamic worker and test worker library
+        id: build
+        run: |
+          set -ex
+          source ./tools/common.sh
+          export ARMONIK_SHARED_HOST_PATH="${{ github.workspace }}/infra/infrastructure/quick-deploy/localhost/all-in-one/data"
+          ./tools/build-deploy-end2end.sh -e "$WORKER_DIST" -n "$WORKER_IMG" -v "$ARMONIK_SDK_VERSION_DEFAULT" -a "$ARMONIK_API_VERSION_DEFAULT" -t "$WORKER_TEST_IMG"
+          WORKER_VERSION="${ARMONIK_SDK_VERSION_DEFAULT}-$(echo "$WORKER_DIST" | awk '{print tolower($0)}')"
+          docker save "$WORKER_IMG:$WORKER_VERSION" | sudo k3s ctr images import /dev/stdin
+          echo "worker_version=$WORKER_VERSION" >> "$GITHUB_OUTPUT"
+          echo "sdk_version=$ARMONIK_SDK_VERSION_DEFAULT" >> "$GITHUB_OUTPUT"
+
+      - id: deploy
+        name: Deploy
+        uses: aneoconsulting/ArmoniK.Action.Deploy/deploy@923fcbd791220589afb89b3f0f5b5935eab39c63 # main
+        with:
+          working-directory: ${{ github.workspace }}/infra
+          type: localhost
+          override-compute: true
+          override-worker-version: ${{ steps.build.outputs.worker_version }}
+          override-worker-image: ${{ env.WORKER_IMG }}
+          override-worker-partition: cppdynamic
+
+      - name: Dependencies
+        id: deps
+        uses: ./.github/actions/armonik-deps-ubuntu
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DARMONIK_API_DIR="${{ steps.deps.outputs.api-prefix }}"
+          -DVERSION="${{ steps.build.outputs.sdk_version }}"
+          -DBUILD_TESTS=ON
+          -DBUILD_WORKER=OFF
+
+      - name: Build
+        run: cmake --build build -j "$(nproc)" --target ArmoniK.SDK.Client.E2ETest
+
+      - name: Run E2E tests
+        timeout-minutes: 30
+        run: |
+          set -ex
+          GrpcClient__Endpoint="$(jq -r .armonik.control_plane_url "${{ steps.deploy.outputs.generated-folder }}/armonik-output.json")"
+          export GrpcClient__Endpoint
+          export PartitionId=cppdynamic
+          export WorkerLib__Version="${{ steps.build.outputs.sdk_version }}"
+          ctest --test-dir build -L e2e --output-on-failure --no-tests=error --timeout 600 \
+            --output-junit "${{ github.workspace }}/e2e-tests.xml"
+
+      - name: Cluster diagnostics
+        if: failure()
+        run: |
+          kubectl get pods -A || true
+          kubectl -n armonik get pods -o name | grep cppdynamic \
+            | xargs -r -I{} kubectl -n armonik logs {} --all-containers --tail=500 || true
+
+      - name: Upload test results
+        if: ${{ !cancelled() && hashFiles('e2e-tests.xml') != '' }}
+        uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # v4.3.6
+        with:
+          name: e2e-tests
+          path: e2e-tests.xml
