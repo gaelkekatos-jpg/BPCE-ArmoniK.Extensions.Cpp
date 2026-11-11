@@ -12,6 +12,8 @@ SET(HEADER_FILES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
 set(UNIT_TEST_SOURCES
 	${SOURCES_FILES_DIR}/SerializationTest.cpp
 	${SOURCES_FILES_DIR}/ThreadPoolTest.cpp
+	${SOURCES_FILES_DIR}/SessionServiceFakeTest.cpp
+	${SOURCES_FILES_DIR}/fakes/FakeServices.cpp
 )
 
 # End-to-end tests: require a deployed ArmoniK (GrpcClient__Endpoint), skipped otherwise

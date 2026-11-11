@@ -75,7 +75,6 @@ if(BUILD_DYNAMICWORKER)
 endif()
 
 if((BUILD_TESTS OR BUILD_END2END) AND BUILD_CLIENT)
-    enable_testing()
     add_subdirectory(ArmoniK.SDK.Client.Test)
 endif()
 
