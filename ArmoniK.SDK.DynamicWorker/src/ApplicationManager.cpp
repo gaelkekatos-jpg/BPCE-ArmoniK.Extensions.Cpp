@@ -13,17 +13,10 @@ ApplicationManager &ApplicationManager::UseApplication(const AppId &appId) & {
   if (appId == currentId) {
     return *this;
   }
-  service_manager.clear();
-  currentLibraryPath.clear();
+  ResetLibrary();
   std::string filename(applicationsBasePath + '/' + appId.application_name +
                        (appId.application_version.empty() ? "" : "." + appId.application_version));
-  currentLibrary = DynamicLib(filename.c_str());
-
-  functionPointers = ArmoniKFunctionPointers{currentLibrary.get<armonik_create_service_t>("armonik_create_service"),
-                                             currentLibrary.get<armonik_destroy_service_t>("armonik_destroy_service"),
-                                             currentLibrary.get<armonik_enter_session_t>("armonik_enter_session"),
-                                             currentLibrary.get<armonik_leave_session_t>("armonik_leave_session"),
-                                             currentLibrary.get<armonik_call_t>("armonik_call")};
+  LoadDynamicLibrary(filename);
   currentId = appId;
   logger.info("Successfully loaded application " + appId.application_name + " ( " + appId.application_version + " )");
   return *this;
@@ -61,17 +54,8 @@ ApplicationManager &ApplicationManager::UseLibrary(const ArmoniK::Sdk::Common::D
   if (lib.library_path == currentLibraryPath && service_name == currentLibraryServiceName) {
     return *this;
   }
-  service_manager.clear();
-  currentId.clear();
-  currentLibrary = DynamicLib(lib.library_path.c_str());
-
-  const std::string prefix = "armonik";
-  functionPointers =
-      ArmoniKFunctionPointers{currentLibrary.get<armonik_create_service_t>((prefix + "_create_service").c_str()),
-                              currentLibrary.get<armonik_destroy_service_t>((prefix + "_destroy_service").c_str()),
-                              currentLibrary.get<armonik_enter_session_t>((prefix + "_enter_session").c_str()),
-                              currentLibrary.get<armonik_leave_session_t>((prefix + "_leave_session").c_str()),
-                              currentLibrary.get<armonik_call_t>((prefix + "_call").c_str())};
+  ResetLibrary();
+  LoadDynamicLibrary(lib.library_path);
 
   currentLibraryPath = lib.library_path;
   currentLibraryServiceName = service_name;
@@ -79,6 +63,23 @@ ApplicationManager &ApplicationManager::UseLibrary(const ArmoniK::Sdk::Common::D
       ServiceManager(functionPointers, ServiceId({lib.library_path, ""}, service_namespace, service_name));
   logger.info("Successfully loaded library " + lib.library_path);
   return *this;
+}
+void ApplicationManager::ResetLibrary() {
+  service_manager.clear();
+  currentId.clear();
+  currentLibraryPath.clear();
+  currentLibraryServiceName.clear();
+  functionPointers.clear();
+}
+void ApplicationManager::LoadDynamicLibrary(const std::string &filename) {
+  DynamicLib library(filename.c_str());
+  const ArmoniKFunctionPointers pointers{library.get<armonik_create_service_t>("armonik_create_service"),
+                                         library.get<armonik_destroy_service_t>("armonik_destroy_service"),
+                                         library.get<armonik_enter_session_t>("armonik_enter_session"),
+                                         library.get<armonik_leave_session_t>("armonik_leave_session"),
+                                         library.get<armonik_call_t>("armonik_call")};
+  currentLibrary = std::move(library);
+  functionPointers = pointers;
 }
 ApplicationManager::ApplicationManager(const ArmoniK::Sdk::Common::Configuration &config,
                                        const armonik::api::common::logger::Logger &logger)
