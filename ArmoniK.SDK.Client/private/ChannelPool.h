@@ -90,7 +90,8 @@ public:
    * @return what the function returns
    */
   template <typename F, typename... Args>
-  typename std::result_of<F(std::shared_ptr<::grpc::Channel>, Args &&...)>::type WithChannel(F f, Args &&...args) {
+  auto WithChannel(F f, Args &&...args)
+      -> decltype(f(std::declval<std::shared_ptr<::grpc::Channel> &>(), static_cast<Args &&>(args)...)) {
     auto guard = GetChannel();
     return f(guard.channel, static_cast<Args &&>(args)...);
   }
