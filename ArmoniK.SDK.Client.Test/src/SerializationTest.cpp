@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <armonik/common/objects.pb.h>
 #include <armonik/sdk/common/ArmoniKSdkException.h>
 #include <armonik/sdk/common/BlobDefinition.h>
 #include <armonik/sdk/common/ConventionTask.h>
@@ -299,4 +300,183 @@ TEST(ConventionPayload, IgnoresUnknownFields) {
 
 TEST(ConventionPayload, MissingInputsThrows) {
   EXPECT_THROW(ConventionPayload::Deserialize(R"({"outputs":{}})"), ArmoniKSdkException);
+}
+
+// Malformed JSON must surface as ArmoniKSdkException (permanent failure, no retry), never as a raw
+// nlohmann exception escaping to the worker.
+TEST(ConventionPayload, MalformedJsonThrows) {
+  EXPECT_THROW(ConventionPayload::Deserialize("{not json"), ArmoniKSdkException);
+  EXPECT_THROW(ConventionPayload::Deserialize(R"({"inputs":{"a":"x"},"outputs":{"q":"y"})"
+                                              "trailing"),
+               ArmoniKSdkException);
+  EXPECT_THROW(ConventionPayload::Deserialize(R"({"inputs":{"a":"x"},"outputs":)"), ArmoniKSdkException);
+}
+
+TEST(ConventionPayload, MissingOutputsThrows) {
+  EXPECT_THROW(ConventionPayload::Deserialize(R"({"inputs":{}})"), ArmoniKSdkException);
+}
+
+TEST(ConventionPayload, WrongValueTypesThrow) {
+  // Top-level value is not an object
+  EXPECT_THROW(ConventionPayload::Deserialize(R"([1,2,3])"), ArmoniKSdkException);
+  // "inputs" is not an object
+  EXPECT_THROW(ConventionPayload::Deserialize(R"({"inputs":5,"outputs":{}})"), ArmoniKSdkException);
+  // Blob ids must be strings
+  EXPECT_THROW(ConventionPayload::Deserialize(R"({"inputs":{"a":1},"outputs":{}})"), ArmoniKSdkException);
+  EXPECT_THROW(ConventionPayload::Deserialize(R"({"inputs":{},"outputs":{"q":null}})"), ArmoniKSdkException);
+}
+
+TEST(ConventionPayload, EmptyPayloadThrows) {
+  EXPECT_THROW(ConventionPayload::Deserialize(""), ArmoniKSdkException);
+  EXPECT_THROW(ConventionPayload::Deserialize("{}"), ArmoniKSdkException);
+}
+
+// A task with no inputs and no outputs is still a valid payload.
+TEST(ConventionPayload, EmptyMapsRoundTrip) {
+  ConventionPayload payload;
+  auto restored = ConventionPayload::Deserialize(payload.Serialize());
+  EXPECT_TRUE(restored.inputs.empty());
+  EXPECT_TRUE(restored.outputs.empty());
+}
+
+// Large payloads (many entries and large values) must round-trip unchanged.
+TEST(ConventionPayload, OversizedPayloadRoundTrip) {
+  ConventionPayload payload;
+  for (int i = 0; i < 10000; ++i) {
+    payload.inputs["in" + std::to_string(i)] = "blob-in-" + std::to_string(i);
+    payload.outputs["out" + std::to_string(i)] = "blob-out-" + std::to_string(i);
+  }
+  const std::string large_value(4 * 1024 * 1024, 'x');
+  payload.inputs["large"] = large_value;
+
+  auto restored = ConventionPayload::Deserialize(payload.Serialize());
+  EXPECT_EQ(restored.inputs.size(), 10001u);
+  EXPECT_EQ(restored.outputs.size(), 10000u);
+  EXPECT_EQ(restored.inputs.at("large"), large_value);
+  EXPECT_EQ(restored.inputs, payload.inputs);
+  EXPECT_EQ(restored.outputs, payload.outputs);
+}
+
+// ---------------------------------------------------------------------------
+// ConventionTask::Decode edge cases
+// ---------------------------------------------------------------------------
+
+TEST(ConventionTask, DecodeMalformedPayloadThrows) {
+  TaskOptions opts("app", "1.0", "ns", "svc", "part");
+  opts.SetConvention("square");
+
+  EXPECT_THROW(ConventionTask::Decode(opts, "{not json", {}), ArmoniKSdkException);
+  EXPECT_THROW(ConventionTask::Decode(opts, "", {}), ArmoniKSdkException);
+  EXPECT_THROW(ConventionTask::Decode(opts, R"({"inputs":{"x":"blob-x"}})", {}), ArmoniKSdkException);
+}
+
+TEST(ConventionTask, DecodeEmptyPayloadMaps) {
+  TaskOptions opts("app", "1.0", "ns", "svc", "part");
+  opts.SetConvention("noop");
+
+  const auto task = ConventionTask::Decode(opts, ConventionPayload().Serialize(), {});
+  EXPECT_EQ(task.method_name, "noop");
+  EXPECT_TRUE(task.inputs.empty());
+  EXPECT_TRUE(task.outputs.empty());
+}
+
+// A large data dependency must be substituted verbatim, including binary content.
+TEST(ConventionTask, DecodeSubstitutesOversizedDependency) {
+  TaskOptions opts("app", "1.0", "ns", "svc", "part");
+  opts.SetConvention("square");
+
+  std::string large_dep(4 * 1024 * 1024, '\0');
+  for (std::size_t i = 0; i < large_dep.size(); ++i) {
+    large_dep[i] = static_cast<char>(i % 256);
+  }
+  ConventionPayload payload;
+  payload.inputs = {{"x", "blob-x"}};
+  payload.outputs = {{"result", "blob-out"}};
+
+  const auto task = ConventionTask::Decode(opts, payload.Serialize(), {{"blob-x", large_dep}});
+  EXPECT_EQ(task.inputs.at("x"), large_dep);
+}
+
+TEST(ConventionTask, DecodeMissingVersionThrows) {
+  TaskOptions opts("app", "1.0", "ns", "svc", "part");
+  opts.options[DynamicLibrary::KeySymbol] = "square";
+
+  EXPECT_THROW(ConventionTask::Decode(opts, ConventionPayload().Serialize(), {}), ArmoniKSdkException);
+}
+
+TEST(ConventionTask, DecodeMissingSymbolThrows) {
+  TaskOptions opts("app", "1.0", "ns", "svc", "part");
+  opts.options[DynamicLibrary::KeyConventionVersion] = DynamicLibrary::ConventionVersion;
+
+  EXPECT_THROW(ConventionTask::Decode(opts, ConventionPayload().Serialize(), {}), ArmoniKSdkException);
+}
+
+// ---------------------------------------------------------------------------
+// TaskOptions with missing fields
+// ---------------------------------------------------------------------------
+
+// A gRPC TaskOptions message with no field set (e.g. sent by a client that only filled the partition)
+// must convert to SDK defaults rather than crash, and must not be mistaken for a convention task.
+TEST(TaskOptionsMissingFields, FromEmptyGrpcMessage) {
+  armonik::api::grpc::v1::TaskOptions raw;
+  TaskOptions opts(raw);
+
+  EXPECT_TRUE(opts.application_name.empty());
+  EXPECT_TRUE(opts.application_version.empty());
+  EXPECT_TRUE(opts.application_namespace.empty());
+  EXPECT_TRUE(opts.application_service.empty());
+  EXPECT_TRUE(opts.partition_id.empty());
+  EXPECT_TRUE(opts.engine_type.empty());
+  EXPECT_EQ(opts.priority, 0);
+  EXPECT_EQ(opts.max_retries, 0);
+  EXPECT_EQ(opts.max_duration.seconds, 0);
+  EXPECT_EQ(opts.max_duration.nanos, 0);
+  EXPECT_TRUE(opts.options.empty());
+
+  EXPECT_FALSE(ConventionTask::IsConventionTask(opts));
+  EXPECT_THROW(opts.GetConventionVersion(), ArmoniKSdkException);
+  EXPECT_THROW(opts.GetSymbol(), ArmoniKSdkException);
+  EXPECT_THROW(opts.GetDynamicLibrary(), ArmoniKSdkException);
+}
+
+TEST(TaskOptionsMissingFields, DefaultArgumentsRoundTripThroughGrpc) {
+  TaskOptions opts("app", "1.0", "ns", "svc");
+  auto raw = static_cast<armonik::api::grpc::v1::TaskOptions>(opts);
+  TaskOptions restored(raw);
+
+  EXPECT_EQ(restored.application_name, "app");
+  EXPECT_EQ(restored.application_version, "1.0");
+  EXPECT_EQ(restored.application_namespace, "ns");
+  EXPECT_EQ(restored.application_service, "svc");
+  EXPECT_TRUE(restored.partition_id.empty());
+  EXPECT_TRUE(restored.engine_type.empty());
+  EXPECT_EQ(restored.priority, 2);
+  EXPECT_EQ(restored.max_retries, 3);
+  EXPECT_EQ(restored.max_duration.seconds, 300);
+  EXPECT_EQ(restored.max_duration.nanos, 0);
+  EXPECT_TRUE(restored.options.empty());
+}
+
+// The convention keys must survive the gRPC round trip so the worker sees what the client set.
+TEST(TaskOptionsMissingFields, ConventionKeysRoundTripThroughGrpc) {
+  TaskOptions opts("app", "1.0", "ns", "svc", "part");
+  DynamicLibrary lib;
+  lib.library_blob_id = "blob-1";
+  lib.symbol = "sym";
+  opts.SetDynamicLibrary(lib);
+
+  TaskOptions restored(static_cast<armonik::api::grpc::v1::TaskOptions>(opts));
+  EXPECT_EQ(restored.GetConventionVersion(), DynamicLibrary::ConventionVersion);
+  EXPECT_EQ(restored.GetSymbol(), "sym");
+  EXPECT_EQ(restored.GetDynamicLibrary().library_blob_id, "blob-1");
+}
+
+// An empty LibraryPath with no LibraryBlobId is as unusable as a missing one.
+TEST(TaskOptionsMissingFields, EmptyLibraryPathWithoutBlobIdThrows) {
+  TaskOptions opts("app", "1.0", "ns", "svc", "part");
+  DynamicLibrary lib;
+  lib.symbol = "sym";
+  opts.SetDynamicLibrary(lib);
+
+  EXPECT_THROW(opts.GetDynamicLibrary(), ArmoniKSdkException);
 }

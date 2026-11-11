@@ -24,9 +24,13 @@
 #include <armonik/common/tasks_filters.pb.h>
 
 #include "ChannelPool.h"
+#include "E2ETestFixture.h"
 #include "End2EndHandlers.h"
 
 ARMONIK_SDK_SUPPRESS_DEPRECATED_BEGIN
+
+class SessionService : public ArmoniKE2ETest {};
+class WaitOption : public ArmoniKE2ETest {};
 
 armonik::api::grpc::v1::tasks::ListTasksRequest::Sort get_default_task_sort() {
   armonik::api::grpc::v1::tasks::ListTasksRequest_Sort sort;
@@ -78,7 +82,7 @@ std::tuple<ArmoniK::Sdk::Common::Properties, armonik::api::common::logger::Logge
 
 std::shared_ptr<::grpc::ClientContext> get_context() { return std::make_shared<::grpc::ClientContext>(); }
 
-TEST(SessionService, reopen_test) {
+TEST_F(SessionService, reopen_test) {
   auto p = init();
   auto properties = std::move(std::get<0>(p));
   auto logger = std::move(std::get<1>(p));
@@ -151,7 +155,7 @@ TEST(SessionService, reopen_test) {
   service_new.CloseSession();
 }
 
-TEST(SessionService, drop_after_done_test) {
+TEST_F(SessionService, drop_after_done_test) {
   auto p = init();
   auto properties = std::move(std::get<0>(p));
   auto logger = std::move(std::get<1>(p));
@@ -195,7 +199,7 @@ TEST(SessionService, drop_after_done_test) {
   ASSERT_TRUE(handler->is_error);
 }
 
-TEST(SessionService, drop_before_done_test) {
+TEST_F(SessionService, drop_before_done_test) {
   auto p = init();
   auto properties = std::move(std::get<0>(p));
   auto logger = std::move(std::get<1>(p));
@@ -223,7 +227,7 @@ TEST(SessionService, drop_before_done_test) {
   ASSERT_FALSE(handler->is_error);
 }
 
-TEST(SessionService, cleanup_tasks) {
+TEST_F(SessionService, cleanup_tasks) {
   auto p = init();
   auto properties = std::move(std::get<0>(p));
   auto logger = std::move(std::get<1>(p));
@@ -281,7 +285,7 @@ TEST(SessionService, cleanup_tasks) {
   service.CloseSession();
 }
 
-TEST(WaitOption, timeout_test) {
+TEST_F(WaitOption, timeout_test) {
 
   ArmoniK::Sdk::Common::Configuration config;
   config.add_json_configuration("appsettings.json").add_env_configuration();
@@ -364,7 +368,7 @@ static std::tuple<ArmoniK::Sdk::Common::Properties, armonik::api::common::logger
 // Submit a single task with one raw-data input. The EchoService reflects the
 // JSON payload (with resolved inputs) back. We verify the result deserializes
 // correctly and contains the original data.
-TEST(SessionService, task_definition_submit_raw_input) {
+TEST_F(SessionService, task_definition_submit_raw_input) {
   auto p = init_convention();
   auto &properties = std::get<0>(p);
   auto &logger = std::get<1>(p);
@@ -393,7 +397,7 @@ TEST(SessionService, task_definition_submit_raw_input) {
 
 // Submit multiple tasks in a single batch, each with distinct inputs, to
 // exercise the batching logic in the upload path.
-TEST(SessionService, task_definition_submit_multiple_tasks) {
+TEST_F(SessionService, task_definition_submit_multiple_tasks) {
   auto p = init_convention();
   auto &properties = std::get<0>(p);
   auto &logger = std::get<1>(p);
@@ -420,7 +424,7 @@ TEST(SessionService, task_definition_submit_multiple_tasks) {
 }
 
 // Submit a task with no inputs to verify the empty-inputs path does not crash.
-TEST(SessionService, task_definition_submit_no_inputs) {
+TEST_F(SessionService, task_definition_submit_no_inputs) {
   auto p = init_convention();
   auto &properties = std::get<0>(p);
   auto &logger = std::get<1>(p);

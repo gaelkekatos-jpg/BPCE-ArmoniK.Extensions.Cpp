@@ -73,4 +73,4 @@ COPY --from=builder /app/install/. /app/install/.
 
 # Set the entrypoint for the application's test executable
 # This is the command that will be executed when the container is run
-ENTRYPOINT ["/app/install/bin/ArmoniK.SDK.Client.Test"]
+ENTRYPOINT ["/app/install/bin/ArmoniK.SDK.Client.E2ETest"]
