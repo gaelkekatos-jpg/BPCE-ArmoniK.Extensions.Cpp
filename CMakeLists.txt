@@ -45,12 +45,18 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
 option(BUILD_END2END "Build End2End test" OFF)
+option(BUILD_TESTS "Build unit and End2End test targets" OFF)
 option(BUILD_WORKER "Build Worker" ON)
 option(BUILD_CLIENT "Build Client" ON)
 option(BUILD_DYNAMICWORKER "Build DynamicWorker" OFF)
 option(BUILD_WORKERTEST "Build Worker Test" OFF)
 option(BUILD_SDK "Build SDK" ON)
 option(BUILD_EXAMPLES "Build Examples" OFF)
+
+# Defines ARMONIK_COVERAGE and ARMONIK_SANITIZERS, applied by setup_options() to every SDK and test target.
+include(${CMAKE_CURRENT_SOURCE_DIR}/Utils.cmake)
+armonik_report_instrumentation()
+enable_testing()
 
 if(BUILD_SDK)
     add_subdirectory(ArmoniK.SDK.Common)
@@ -68,15 +74,19 @@ if(BUILD_DYNAMICWORKER)
     add_subdirectory(ArmoniK.SDK.DynamicWorker)
 endif()
 
-if(BUILD_END2END)
-    if(BUILD_CLIENT)
-        add_subdirectory(ArmoniK.SDK.Client.Test)
-    endif()
+if((BUILD_TESTS OR BUILD_END2END) AND BUILD_CLIENT)
+    add_subdirectory(ArmoniK.SDK.Client.Test)
+endif()
 
+if(BUILD_END2END)
     if(UNIX AND BUILD_WORKERTEST)
         add_subdirectory(ArmoniK.SDK.Worker.Test)
     endif()
 endif ()
+
+if(BUILD_TESTS AND UNIX AND BUILD_SDK AND BUILD_WORKER AND BUILD_DYNAMICWORKER)
+    add_subdirectory(ArmoniK.SDK.Worker.UnitTest)
+endif()
 
 if(BUILD_EXAMPLES)
     if(BUILD_WORKER)

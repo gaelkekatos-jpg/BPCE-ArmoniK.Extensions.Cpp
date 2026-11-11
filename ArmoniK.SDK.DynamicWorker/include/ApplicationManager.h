@@ -104,6 +104,18 @@ public:
 
 private:
   /**
+   * @brief Releases the current service and forgets the loaded library, so that a failed load leaves no stale state
+   */
+  void ResetLibrary();
+
+  /**
+   * @brief Loads the given library and resolves the ArmoniK SDK entry points
+   * @param filename Path to the library
+   * @throws ArmoniKSdkException if the library cannot be loaded or misses an entry point
+   */
+  void LoadDynamicLibrary(const std::string &filename);
+
+  /**
    * @brief Loaded application's function pointers
    */
   ArmoniKFunctionPointers functionPointers;
@@ -113,14 +125,15 @@ private:
   AppId currentId;
 
   /**
+   * @brief Currently loaded library
+   * @note Declared before service_manager so that the service is destroyed before its library is unloaded
+   */
+  DynamicLib currentLibrary;
+
+  /**
    * @brief Current service manager
    */
   ServiceManager service_manager;
-
-  /**
-   * @brief Currently loaded library
-   */
-  DynamicLib currentLibrary;
 
   /**
    * @brief Base path in which to look for the library to load (legacy mode)
