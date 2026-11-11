@@ -52,6 +52,11 @@ option(BUILD_WORKERTEST "Build Worker Test" OFF)
 option(BUILD_SDK "Build SDK" ON)
 option(BUILD_EXAMPLES "Build Examples" OFF)
 
+# Defines ARMONIK_COVERAGE and ARMONIK_SANITIZERS, applied by setup_options() to every SDK and test target.
+include(${CMAKE_CURRENT_SOURCE_DIR}/Utils.cmake)
+armonik_report_instrumentation()
+enable_testing()
+
 if(BUILD_SDK)
     add_subdirectory(ArmoniK.SDK.Common)
 
