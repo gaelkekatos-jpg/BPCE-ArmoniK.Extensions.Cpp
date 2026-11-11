@@ -52,7 +52,6 @@ option(BUILD_DYNAMICWORKER "Build DynamicWorker" OFF)
 option(BUILD_WORKERTEST "Build Worker Test" OFF)
 option(BUILD_SDK "Build SDK" ON)
 option(BUILD_EXAMPLES "Build Examples" OFF)
-option(BUILD_TESTS "Build unit tests" OFF)
 
 # Defines ARMONIK_COVERAGE and ARMONIK_SANITIZERS, applied by setup_options() to every SDK and test target.
 include(${CMAKE_CURRENT_SOURCE_DIR}/Utils.cmake)
@@ -86,7 +85,6 @@ if(BUILD_END2END)
 endif ()
 
 if(BUILD_TESTS AND UNIX AND BUILD_SDK AND BUILD_WORKER AND BUILD_DYNAMICWORKER)
-    enable_testing()
     add_subdirectory(ArmoniK.SDK.Worker.UnitTest)
 endif()
 

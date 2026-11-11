@@ -88,6 +88,7 @@ lcov "${lcov_opts[@]}" --quiet --remove "${tmp_dir}/sdk.info" \
   '*/ArmoniK.SDK.Client.Test/*' \
   '*/ArmoniK.SDK.Worker.Test/*' \
   '*/ArmoniK.SDK.Worker.Test.Unit/*' \
+  '*/ArmoniK.SDK.Worker.UnitTest/*' \
   --output-file "${output_dir}/lcov.info"
 
 echo "==> Generating HTML report"
