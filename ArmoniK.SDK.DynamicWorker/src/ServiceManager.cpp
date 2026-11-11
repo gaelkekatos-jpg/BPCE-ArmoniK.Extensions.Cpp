@@ -27,6 +27,9 @@ ServiceManager::ServiceManager(ArmoniKFunctionPointers functionsPointers, Servic
 }
 ServiceManager::~ServiceManager() { clear(); }
 ServiceManager &ServiceManager::UseSession(const std::string &sessionId) & {
+  if (serviceId.empty()) {
+    throw ArmoniK::Sdk::Common::ArmoniKSdkException("No service is loaded");
+  }
   if (sessionId != current_session) {
     if (!current_session.empty()) {
       functionPointers.leave_session(service_context, session_context);
