@@ -45,32 +45,20 @@ jobs:
       - name: Build
         run: cmake --build build -j "$(nproc)"
 
-      # --no-tests=error: an empty "unit" label (e.g. tests not registered) must fail, not pass silently
-      - name: Run unit tests
+      # tools/coverage.sh runs `ctest -L unit` (failing if no unit-labelled test exists), then writes
+      # coverage-report/lcov.info and the HTML report; it still writes the report when tests fail
+      - name: Run unit tests with coverage
         run: >
-          ctest --test-dir build -L unit
-          --output-on-failure --no-tests=error --timeout 300
+          tools/coverage.sh build
+          --timeout 300
           --output-junit "${{ github.workspace }}/unit-tests.xml"
 
-      - name: Capture coverage
-        if: ${{ !cancelled() }}
-        env:
-          API_PREFIX: ${{ steps.deps.outputs.api-prefix }}
-        run: |
-          set -ex
-          lcov --capture --directory build --output-file build/coverage.raw.info \
-            --ignore-errors mismatch,negative,unused
-          lcov --remove build/coverage.raw.info '/usr/*' '*/_deps/*' "$API_PREFIX/*" '*/ArmoniK.SDK.Client.Test/*' \
-            --output-file build/coverage.info --ignore-errors unused
-          lcov --list build/coverage.info
-          genhtml build/coverage.info --output-directory coverage-report
-
       - name: Upload coverage to Codecov
-        if: ${{ !cancelled() && hashFiles('build/coverage.info') != '' }}
+        if: ${{ !cancelled() && hashFiles('coverage-report/lcov.info') != '' }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6.0.2
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: build/coverage.info
+          files: coverage-report/lcov.info
           disable_search: true
           flags: unit
           fail_ci_if_error: false
