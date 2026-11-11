@@ -1,5 +1,8 @@
 # ArmoniK.Extensions.Cpp
 
+[![CI](https://github.com/gaelkekatos-jpg/BPCE-ArmoniK.Extensions.Cpp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gaelkekatos-jpg/BPCE-ArmoniK.Extensions.Cpp/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/gaelkekatos-jpg/BPCE-ArmoniK.Extensions.Cpp/graph/badge.svg)](https://codecov.io/gh/gaelkekatos-jpg/BPCE-ArmoniK.Extensions.Cpp)
+
 This project is part of the [ArmoniK](https://github.com/aneoconsulting/ArmoniK) project. The ArmoniK C++ SDK is used by developers to create ArmoniK applications. This SDK contains a high-level API, programs, and tools, including code samples, libraries, documentation, and docker images to ease the compile and build process of client and worker binaries on multiple target platforms such as Ubuntu, and Redhat. It also provides guides that help developers to create a software application for use on ArmoniK. ArmoniK C++ SDK provides everything developers need to get their applications ready for production quickly and efficiently.
 
 ## Documentation
@@ -19,3 +22,5 @@ To setup your own client and / or worker, please follows these [steps](https://a
 ## Tests
 
 To deploy and test ArmoniK C++ SDK, please follows these [steps](https://armonikextensionscpp.readthedocs.io/en/latest/content/guide/2.tests.html).
+
+The [CI workflow](.github/workflows/ci.yml) runs the unit tests (`ctest -L unit`, no cluster needed) with coverage on every pull request and push to `main`, and uploads the report to Codecov (HTML report as the `coverage-report` artifact). The end-to-end tests (`ctest -L e2e`) run nightly and on manual dispatch against an ArmoniK deployed on the runner.

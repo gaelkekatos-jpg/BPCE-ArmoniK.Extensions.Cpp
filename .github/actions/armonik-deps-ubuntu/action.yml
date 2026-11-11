@@ -1,0 +1,76 @@
+name: ArmoniK C++ dependencies (Ubuntu)
+description: >-
+  Installs the Ubuntu build dependencies of tools/BuildEnv.Dockerfile and restores ArmoniK.Api
+  from the Actions cache, or builds it from source (as in ArmoniK.SDK.Client/Dockerfile) on a miss.
+inputs:
+  extra-packages:
+    description: Additional apt packages to install (space separated)
+    required: false
+    default: ""
+  api-prefix:
+    description: Install prefix of ArmoniK.Api (default $HOME/armonik-api)
+    required: false
+    default: ""
+outputs:
+  api-prefix:
+    description: Install prefix of ArmoniK.Api, pass it to the SDK configure as -DARMONIK_API_DIR
+    value: ${{ steps.key.outputs.api-prefix }}
+  api-version:
+    description: ArmoniK.Api version (ARMONIK_API_VERSION_DEFAULT of tools/common.sh)
+    value: ${{ steps.key.outputs.api-version }}
+runs:
+  using: composite
+  steps:
+    - name: Install apt packages
+      shell: bash
+      env:
+        EXTRA_PACKAGES: ${{ inputs.extra-packages }}
+      run: |
+        sudo apt-get update
+        # shellcheck disable=SC2086
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+          build-essential cmake git ca-certificates \
+          libc-ares-dev protobuf-compiler-grpc libgrpc-dev libgrpc++-dev libprotobuf-dev nlohmann-json3-dev \
+          $EXTRA_PACKAGES
+
+    # The ArmoniK.Api install links against the apt gRPC/protobuf, so they are part of the key
+    - name: Compute cache key
+      id: key
+      shell: bash
+      env:
+        API_PREFIX: ${{ inputs.api-prefix }}
+      run: |
+        source ./tools/common.sh
+        source /etc/os-release
+        GRPC_VERSION="$(dpkg-query -W -f='${Version}' libgrpc++-dev)"
+        PROTOBUF_VERSION="$(dpkg-query -W -f='${Version}' libprotobuf-dev)"
+        {
+          echo "api-version=$ARMONIK_API_VERSION_DEFAULT"
+          echo "api-prefix=${API_PREFIX:-$HOME/armonik-api}"
+          echo "key=armonik-api-$ARMONIK_API_VERSION_DEFAULT-$ID-$VERSION_ID-grpc$GRPC_VERSION-pb$PROTOBUF_VERSION-${{ hashFiles('.github/actions/armonik-deps-ubuntu/action.yml') }}"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Restore ArmoniK.Api
+      id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.key.outputs.api-prefix }}
+        key: ${{ steps.key.outputs.key }}
+
+    - name: Build ArmoniK.Api
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        API_VERSION: ${{ steps.key.outputs.api-version }}
+        API_PREFIX: ${{ steps.key.outputs.api-prefix }}
+      run: |
+        set -ex
+        API_SRC="$RUNNER_TEMP/ArmoniK.Api"
+        git clone --depth 1 -b "$API_VERSION" https://github.com/aneoconsulting/ArmoniK.Api.git "$API_SRC"
+        cmake -S "$API_SRC/packages/cpp" -B "$API_SRC/build" \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX="$API_PREFIX" \
+          -DBUILD_TEST=OFF -DBUILD_CLIENT=ON -DBUILD_WORKER=ON
+        cmake --build "$API_SRC/build" -j "$(nproc)"
+        cmake --install "$API_SRC/build"
+        rm -rf "$API_SRC"
