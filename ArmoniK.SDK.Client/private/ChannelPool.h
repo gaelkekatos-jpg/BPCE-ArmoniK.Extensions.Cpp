@@ -7,6 +7,7 @@
 #include <grpcpp/channel.h>
 #include <mutex>
 #include <queue>
+#include <type_traits>
 #include <utility>
 
 namespace ArmoniK {
@@ -90,7 +91,7 @@ public:
    * @return what the function returns
    */
   template <typename F, typename... Args>
-  typename std::result_of<F(std::shared_ptr<::grpc::Channel>, Args &&...)>::type WithChannel(F f, Args &&...args) {
+  std::invoke_result_t<F, std::shared_ptr<::grpc::Channel>, Args &&...> WithChannel(F f, Args &&...args) {
     auto guard = GetChannel();
     return f(guard.channel, static_cast<Args &&>(args)...);
   }
