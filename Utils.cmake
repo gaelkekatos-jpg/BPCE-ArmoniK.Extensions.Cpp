@@ -20,7 +20,7 @@ function(setup_options project_name_param)
         target_link_options(${project_name_param} PRIVATE $<$<CONFIG:Debug>:-fsanitize=undefined,address> ${extra_param})
     endif()
 
-    set_property(TARGET ${project_name_param} PROPERTY CXX_STANDARD 11)
+    set_property(TARGET ${project_name_param} PROPERTY CXX_STANDARD 17)
     set_property(TARGET ${project_name_param} PROPERTY CXX_STANDARD_REQUIRED ON)
     set_property(TARGET ${project_name_param} PROPERTY CXX_EXTENSIONS OFF)
 endfunction()
