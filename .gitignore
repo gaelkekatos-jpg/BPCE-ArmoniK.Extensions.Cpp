@@ -401,3 +401,6 @@ build/
 # tools/windows/build.ps1 default output
 build-windows/
 install-windows/
+
+# tools/coverage.sh output
+coverage-report/
