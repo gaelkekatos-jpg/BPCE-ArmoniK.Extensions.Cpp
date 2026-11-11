@@ -13,7 +13,7 @@ namespace Test {
  */
 class ExceptionService : ServiceBase {
 public:
-  std::string call(void *, const std::string &name, const std::string &input) override {
+  std::string call(void *, const std::string &name, const std::string &) override {
     std::cout << "ExceptionService method : " << name << std::endl;
     if (name == "sdkError") {
       throw ArmoniK::Sdk::Common::ArmoniKSdkException("Permanent SDK error, no retry");
