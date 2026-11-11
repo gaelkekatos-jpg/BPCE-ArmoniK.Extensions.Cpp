@@ -40,6 +40,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Debug
           -DARMONIK_API_DIR="${{ steps.deps.outputs.api-prefix }}"
           -DBUILD_TESTS=ON
+          -DBUILD_DYNAMICWORKER=ON
           -DARMONIK_COVERAGE=ON
 
       - name: Build
