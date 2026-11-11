@@ -1,13 +1,26 @@
 cmake_minimum_required(VERSION 3.22)
 set(PROJECT_NAME ArmoniK.SDK.Client.Test)
+set(UNIT_TEST_TARGET ArmoniK.SDK.Client.UnitTest)
+set(E2E_TEST_TARGET ArmoniK.SDK.Client.E2ETest)
 
 project(${PROJECT_NAME})
 
 SET(SOURCES_FILES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
 SET(HEADER_FILES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
-FILE(GLOB_RECURSE SRC_CLIENT_FILES ${SOURCES_FILES_DIR}/*.cpp)
-FILE(GLOB_RECURSE HEADER_CLIENT_FILES ${HEADER_FILES_DIR}/*.h)
+# Unit tests: no ArmoniK cluster required
+set(UNIT_TEST_SOURCES
+	${SOURCES_FILES_DIR}/SerializationTest.cpp
+	${SOURCES_FILES_DIR}/ThreadPoolTest.cpp
+)
+
+# End-to-end tests: require a deployed ArmoniK (GrpcClient__Endpoint), skipped otherwise
+set(E2E_TEST_SOURCES
+	${SOURCES_FILES_DIR}/ArmoniK.SDK.Client.Test.cpp
+	${SOURCES_FILES_DIR}/SessionHandlingTest.cpp
+	${SOURCES_FILES_DIR}/BudgetTests.cpp
+	${SOURCES_FILES_DIR}/End2EndHandlers.cpp
+)
 
 find_package(ArmoniK.Api.Client CONFIG REQUIRED)
 
@@ -17,22 +30,6 @@ endif()
 if(NOT TARGET ArmoniK.SDK.Client)
 	find_package(ArmoniK.SDK.Client CONFIG REQUIRED)
 endif()
-
-add_executable(${PROJECT_NAME} ${SRC_CLIENT_FILES})
-
-target_link_libraries(${PROJECT_NAME} PUBLIC ArmoniK.Api.Common ArmoniK.Api.Client ArmoniK.SDK.Common ArmoniK.SDK.Client)
-target_link_libraries(${PROJECT_NAME} PRIVATE GTest::gtest_main)
-target_include_directories(${PROJECT_NAME}
-		PUBLIC
-		"$<BUILD_INTERFACE:${HEADER_FILES_DIR}>"
-)
-
-include(${CMAKE_CURRENT_SOURCE_DIR}/../Utils.cmake)
-setup_options(${PROJECT_NAME})
-split_version(${VERSION})
-setup_lib_version(${PROJECT_NAME})
-
-FILE(COPY appsettings.json DESTINATION "${PROJECT_BINARY_DIR}")
 
 if(POLICY CMP0135)
 	cmake_policy(SET CMP0135 OLD)
@@ -50,8 +47,28 @@ set(INSTALL_GTEST OFF)
 FetchContent_MakeAvailable(googletest)
 
 include(GoogleTest)
-gtest_discover_tests(${PROJECT_NAME})
+include(${CMAKE_CURRENT_SOURCE_DIR}/../Utils.cmake)
+split_version(${VERSION})
 
-install(TARGETS ${PROJECT_NAME}
+add_executable(${UNIT_TEST_TARGET} ${UNIT_TEST_SOURCES})
+add_executable(${E2E_TEST_TARGET} ${E2E_TEST_SOURCES})
+
+foreach(test_target ${UNIT_TEST_TARGET} ${E2E_TEST_TARGET})
+	target_link_libraries(${test_target} PUBLIC ArmoniK.Api.Common ArmoniK.Api.Client ArmoniK.SDK.Common ArmoniK.SDK.Client)
+	target_link_libraries(${test_target} PRIVATE GTest::gtest_main)
+	target_include_directories(${test_target}
+			PUBLIC
+			"$<BUILD_INTERFACE:${HEADER_FILES_DIR}>"
+	)
+	setup_options(${test_target})
+	setup_lib_version(${test_target})
+endforeach()
+
+FILE(COPY appsettings.json DESTINATION "${PROJECT_BINARY_DIR}")
+
+gtest_discover_tests(${UNIT_TEST_TARGET} PROPERTIES LABELS "unit" TIMEOUT 60)
+gtest_discover_tests(${E2E_TEST_TARGET} PROPERTIES LABELS "e2e")
+
+install(TARGETS ${UNIT_TEST_TARGET} ${E2E_TEST_TARGET}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_BINDIR})

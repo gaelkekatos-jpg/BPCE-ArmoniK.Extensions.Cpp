@@ -30,7 +30,12 @@
 #include "armonik/sdk/common/TaskOptions.h"
 #include <armonik/sdk/common/TaskPayload.h>
 
+#include "E2ETestFixture.h"
+
 ARMONIK_SDK_SUPPRESS_DEPRECATED_BEGIN
+
+class DownloadByteBudget : public ArmoniKE2ETest {};
+class UploadByteBudget : public ArmoniKE2ETest {};
 
 namespace {
 
@@ -205,7 +210,7 @@ long long RunUploadBatchAndMeasureElapsedMs(unsigned int call_count, unsigned in
 
 } // namespace
 
-TEST(DownloadByteBudget, tight_budget_bounds_peak_download_memory) {
+TEST_F(DownloadByteBudget, tight_budget_bounds_peak_download_memory) {
   constexpr unsigned int kTaskCount = 64;
   constexpr size_t kPayloadBytes = 1 * 1024 * 1024; // 1 MiB per result
 
@@ -224,7 +229,7 @@ TEST(DownloadByteBudget, tight_budget_bounds_peak_download_memory) {
   EXPECT_LT(tight_peak_kb, unbounded_peak_kb);
 }
 
-TEST(UploadByteBudget, tight_budget_serializes_concurrent_uploads) {
+TEST_F(UploadByteBudget, tight_budget_serializes_concurrent_uploads) {
   constexpr unsigned int kCallCount = 8;
   constexpr unsigned int kTasksPerCall = 8;         // 64 tasks total, spread across kCallCount concurrent calls
   constexpr size_t kPayloadBytes = 1 * 1024 * 1024; // 1 MiB per task payload

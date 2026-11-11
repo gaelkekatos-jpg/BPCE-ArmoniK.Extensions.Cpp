@@ -23,9 +23,12 @@
 #include <thread>
 
 #include "ChannelPool.h"
+#include "E2ETestFixture.h"
 #include "End2EndHandlers.h"
 
 ARMONIK_SDK_SUPPRESS_DEPRECATED_BEGIN
+
+class testSDK : public ArmoniKE2ETest {};
 
 template <typename T> std::string StrSerialize(T a, T b) {
   char payload_val[sizeof(T) * 2];
@@ -67,7 +70,7 @@ template <typename T> void serialize_item(char *&outputVec, const T *item, const
 }
 template <typename T> void serialize_item(char *&outputVec, const T &item) { serialize_item(outputVec, &item, 1); }
 
-TEST(testSDK, testEcho) {
+TEST_F(testSDK, testEcho) {
   std::cout << "Hello, World!" << std::endl;
   // Load configuration from file and environment
   ArmoniK::Sdk::Common::Configuration config;
@@ -131,7 +134,7 @@ TEST(testSDK, testEcho) {
   std::cout << "Done" << std::endl;
 }
 
-TEST(testSDK, testAddInt) {
+TEST_F(testSDK, testAddInt) {
   std::cout << "Doing some computation!" << std::endl;
   // Load configuration from file and environment
   ArmoniK::Sdk::Common::Configuration config;
@@ -232,7 +235,7 @@ TEST(testSDK, testAddInt) {
   std::cout << "Done" << std::endl;
 }
 
-TEST(testSDK, testAddFloat) {
+TEST_F(testSDK, testAddFloat) {
   std::cout << "Doing some computation!" << std::endl;
   // Load configuration from file and environment
   ArmoniK::Sdk::Common::Configuration config;
@@ -344,7 +347,7 @@ TEST(testSDK, testAddFloat) {
   std::cout << "Done" << std::endl;
 }
 
-TEST(testSDK, testStressTest) {
+TEST_F(testSDK, testStressTest) {
   std::cout << "Doing some computation!" << std::endl;
   // Load configuration from file and environment
   ArmoniK::Sdk::Common::Configuration config;
@@ -433,7 +436,7 @@ TEST(testSDK, testStressTest) {
   std::cout << "Done" << std::endl;
 }
 
-TEST(testSDK, parallelSubmit) {
+TEST_F(testSDK, parallelSubmit) {
   // Load configuration from file and environment
   ArmoniK::Sdk::Common::Configuration config;
   config.add_json_configuration("appsettings.json").add_env_configuration();
@@ -533,7 +536,7 @@ TEST(testSDK, parallelSubmit) {
   logger.info("Closed session", {{"session_id", service.getSession()}});
 }
 
-TEST(testSDK, testSegFault) {
+TEST_F(testSDK, testSegFault) {
   std::cout << "Testing SegFault in worker!" << std::endl;
   // Load configuration from file and environment
   ArmoniK::Sdk::Common::Configuration config;
@@ -584,7 +587,7 @@ TEST(testSDK, testSegFault) {
   std::cout << "Done" << std::endl;
 }
 
-TEST(testSDK, testLargePayload) {
+TEST_F(testSDK, testLargePayload) {
   std::cout << "Testing large payload..." << std::endl;
 
   ArmoniK::Sdk::Common::Configuration config;
@@ -639,7 +642,12 @@ struct ExceptionTestParam {
   int expected_task_count;
 };
 
-class ExceptionServiceTest : public ::testing::TestWithParam<ExceptionTestParam> {};
+void PrintTo(const ExceptionTestParam &param, std::ostream *os) {
+  *os << param.method_name << " (max_retries=" << param.max_retries
+      << ", expected_task_count=" << param.expected_task_count << ")";
+}
+
+class ExceptionServiceTest : public ArmoniKE2ETest, public ::testing::WithParamInterface<ExceptionTestParam> {};
 
 TEST_P(ExceptionServiceTest, HandlesExceptionCases) {
   const auto &param = GetParam();
@@ -725,11 +733,14 @@ TEST_P(ExceptionServiceTest, HandlesExceptionCases) {
 // "retry": std::runtime_error → transient failure (gRPC UNAVAILABLE) → 3 task attempts (original + 2 retries
 // exhausted).
 INSTANTIATE_TEST_SUITE_P(ExceptionCases, ExceptionServiceTest,
-                         ::testing::Values(ExceptionTestParam{"sdkError", 2, 1}, ExceptionTestParam{"retry", 2, 3}));
+                         ::testing::Values(ExceptionTestParam{"sdkError", 2, 1}, ExceptionTestParam{"retry", 2, 3}),
+                         [](const ::testing::TestParamInfo<ExceptionTestParam> &info) {
+                           return info.param.method_name;
+                         });
 
 /* Submit a TaskDefinition via the convention path and verify the task
  * completes successfully. The method name is carried by the Symbol task option. */
-TEST(testSDK, testConventionEcho) {
+TEST_F(testSDK, testConventionEcho) {
   ArmoniK::Sdk::Common::Configuration config;
   config.add_json_configuration("appsettings.json").add_env_configuration();
 
@@ -778,7 +789,7 @@ TEST(testSDK, testConventionEcho) {
  *   - Task C: add(FromBlobId(A), FromBlobId(B)) -> "13"
  * Verifies that result_id from HandleResponse can be passed to
  * BlobDefinition::FromBlobId to wire a task output as input of a downstream task. */
-TEST(testSDK, testConventionChainedSquareThenAdd) {
+TEST_F(testSDK, testConventionChainedSquareThenAdd) {
   ArmoniK::Sdk::Common::Configuration config;
   config.add_json_configuration("appsettings.json").add_env_configuration();
 
